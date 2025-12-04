@@ -16,7 +16,7 @@ app.use(express.json());
 // Initialize Gemini
 // Ensure GEMINI_API_KEY is set in Render Environment Variables
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
 // --- THE BRAIN: CONTEXTUAL INSTRUCTIONS ---
 const SYSTEM_PROMPTS = {
@@ -94,3 +94,4 @@ app.post('/api/chat', async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Finova AI Server running on port ${PORT}`));
+
