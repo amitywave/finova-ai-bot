@@ -10,12 +10,15 @@ app.use(express.json());
 
 const API_KEY = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : "";
 
-// --- THE ROBUST MODEL LIST ---
-// If the first one fails, the server will automatically try the next one.
+// --- THE ROBUST MODEL LIST (The "Kitchen Sink") ---
+// We try specific versions first, then generic aliases.
 const MODELS_TO_TRY = [
-    "gemini-1.5-flash", 
-    "gemini-pro", 
-    "gemini-1.5-pro-latest"
+    "gemini-1.5-flash",          // Standard Flash
+    "gemini-1.5-flash-latest",   // Latest alias
+    "gemini-1.5-flash-001",      // Specific version (Often most stable)
+    "gemini-1.5-pro",            // Standard Pro
+    "gemini-1.5-pro-latest",     // Latest Pro
+    "gemini-pro"                 // Old stable Pro (Backup)
 ];
 
 const SYSTEM_PROMPTS = {
@@ -25,6 +28,7 @@ const SYSTEM_PROMPTS = {
 
 // Function to call Google API
 async function callGoogleAI(modelName, instruction, userMessage) {
+    // Note: using v1beta to ensure access to newer models
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
     
     const payload = {
@@ -59,13 +63,13 @@ app.post('/api/chat', async (req, res) => {
           return res.json({ reply: reply });
           
       } catch (error) {
-          console.error(`Model ${model} failed with error: ${error.message}`);
+          console.error(`Model ${model} failed. Trying next...`);
           // Continue to the next model in the list...
       }
   }
 
   // If ALL models fail:
-  res.status(500).json({ reply: "I am having trouble connecting to Google's servers right now. Please check your API Key." });
+  res.status(500).json({ reply: "I am having trouble connecting to Google's servers. Please check API Key permissions." });
 });
 
 const PORT = process.env.PORT || 5000;
