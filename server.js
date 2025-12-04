@@ -4,77 +4,69 @@ require('dotenv').config();
 
 const app = express();
 
-app.use(cors({
-    origin: '*', 
-    methods: ['GET', 'POST']
-}));
-
+// Allow connections from your Hostinger site
+app.use(cors({ origin: '*', methods: ['GET', 'POST'] }));
 app.use(express.json());
 
-// --- CONFIGURATION ---
-const API_KEY = process.env.GEMINI_API_KEY;
+const API_KEY = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : "";
 
-// FIX: Switched to 'gemini-pro' (The stable alias) to fix the 404 Model Not Found error.
-// This alias automatically points to the current stable version supported by Google.
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${API_KEY}`;
+// --- THE ROBUST MODEL LIST ---
+// If the first one fails, the server will automatically try the next one.
+const MODELS_TO_TRY = [
+    "gemini-1.5-flash", 
+    "gemini-pro", 
+    "gemini-1.5-pro-latest"
+];
 
 const SYSTEM_PROMPTS = {
-  home: `
-    You are Finova AI, a helpful assistant.
-    - Investing? Suggest SIP Calculator.
-    - Debt? Suggest Loan Calculator.
-    - Taxes? Suggest TaxPro Tool.
-    Keep answers short.
-  `,
-  prepayment: `
-    You are a 'Debt Freedom Expert' inside a Home Loan Pre-payment Calculator.
-    - GOAL: Motivate users to become debt-free.
-    - CONCEPTS:
-      * paying extra cuts PRINCIPAL directly.
-      * prepayment reduces tenure significantly.
-      * small increases (like ₹1000) save lakhs.
-    - Keep answers short (under 3 sentences).
-  `
+  home: "You are Finova AI. Guide users: Investing->SIP Calc, Debt->Loan Calc, Taxes->TaxPro. Keep it short.",
+  prepayment: "You are a Debt Freedom Expert. Explain that Prepayment cuts Principal and reduces Tenure. Keep it short."
 };
 
-app.post('/api/chat', async (req, res) => {
-  try {
-    const { message, context } = req.body;
-    const activeInstruction = SYSTEM_PROMPTS[context] || SYSTEM_PROMPTS['home'];
-
-    // Construct the payload for the RAW API
+// Function to call Google API
+async function callGoogleAI(modelName, instruction, userMessage) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
+    
     const payload = {
-      contents: [{
-        parts: [{
-          text: `System Instruction: ${activeInstruction}\n\nUser Question: ${message}`
-        }]
-      }]
+        contents: [{ parts: [{ text: `System: ${instruction}\nUser: ${userMessage}` }] }]
     };
 
-    // Make the request using standard fetch (No library needed)
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Google API Error: ${response.status} - ${errorText}`);
+        throw new Error(response.status); // Throw 404 or 500 to trigger retry
     }
 
     const data = await response.json();
-    
-    // Extract text from the raw response structure
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't generate a response.";
+    return data.candidates?.[0]?.content?.parts?.[0]?.text;
+}
 
-    res.json({ reply: text });
-
-  } catch (error) {
-    console.error("Server Error:", error.message);
-    res.status(500).json({ reply: "I'm having trouble connecting to Google right now. Please check the logs." });
+app.post('/api/chat', async (req, res) => {
+  const { message, context } = req.body;
+  const activeInstruction = SYSTEM_PROMPTS[context] || SYSTEM_PROMPTS['home'];
+  
+  // --- SMART FALLBACK LOOP ---
+  for (const model of MODELS_TO_TRY) {
+      try {
+          console.log(`Trying model: ${model}...`);
+          const reply = await callGoogleAI(model, activeInstruction, message);
+          
+          // If we get here, it worked! Send response and exit loop.
+          return res.json({ reply: reply });
+          
+      } catch (error) {
+          console.error(`Model ${model} failed with error: ${error.message}`);
+          // Continue to the next model in the list...
+      }
   }
+
+  // If ALL models fail:
+  res.status(500).json({ reply: "I am having trouble connecting to Google's servers right now. Please check your API Key." });
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Finova AI Server (Direct Mode) running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Finova Auto-Fallback Server running on port ${PORT}`));
