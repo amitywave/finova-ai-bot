@@ -13,8 +13,10 @@ app.use(express.json());
 
 // --- CONFIGURATION ---
 const API_KEY = process.env.GEMINI_API_KEY;
-// We use the raw API endpoint for Gemini 1.5 Flash
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+
+// FIX: Switched to 'gemini-pro' (The stable alias) to fix the 404 Model Not Found error.
+// This alias automatically points to the current stable version supported by Google.
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${API_KEY}`;
 
 const SYSTEM_PROMPTS = {
   home: `
