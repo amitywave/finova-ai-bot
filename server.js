@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 
@@ -12,15 +11,14 @@ app.use(cors({
 
 app.use(express.json());
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-// We can now use 'gemini-1.5-flash' because we upgraded the package.json
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// --- CONFIGURATION ---
+const API_KEY = process.env.GEMINI_API_KEY;
+// We use the raw API endpoint for Gemini 1.5 Flash
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
 
 const SYSTEM_PROMPTS = {
   home: `
-    You are Finova AI, a helpful assistant. Guide users to calculators.
+    You are Finova AI, a helpful assistant.
     - Investing? Suggest SIP Calculator.
     - Debt? Suggest Loan Calculator.
     - Taxes? Suggest TaxPro Tool.
@@ -35,7 +33,6 @@ const SYSTEM_PROMPTS = {
       * small increases (like ₹1000) save lakhs.
     - Keep answers short (under 3 sentences).
   `
-  // (You can add other contexts 'sip', 'tax' etc here if needed later)
 };
 
 app.post('/api/chat', async (req, res) => {
@@ -43,19 +40,39 @@ app.post('/api/chat', async (req, res) => {
     const { message, context } = req.body;
     const activeInstruction = SYSTEM_PROMPTS[context] || SYSTEM_PROMPTS['home'];
 
-    const prompt = `System: ${activeInstruction}\nUser: ${message}`;
+    // Construct the payload for the RAW API
+    const payload = {
+      contents: [{
+        parts: [{
+          text: `System Instruction: ${activeInstruction}\n\nUser Question: ${message}`
+        }]
+      }]
+    };
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    // Make the request using standard fetch (No library needed)
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Google API Error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    // Extract text from the raw response structure
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't generate a response.";
 
     res.json({ reply: text });
 
   } catch (error) {
-    console.error("AI Error:", error.message);
-    res.status(500).json({ reply: "I am upgrading my brain right now. Please try again in 1 minute." });
+    console.error("Server Error:", error.message);
+    res.status(500).json({ reply: "I'm having trouble connecting to Google right now. Please check the logs." });
   }
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Finova AI Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Finova AI Server (Direct Mode) running on port ${PORT}`));
