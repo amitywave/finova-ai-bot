@@ -11,21 +11,28 @@ const allowedOrigins = [
   'http://localhost:5500',      // VS Code Live Server default
   'http://127.0.0.1:5500'       // Alternative Local IP
 ];
-
+// --- NEW ROBUST CORS SETUP ---
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // 1. Log the origin to the Render Console (So you can debug if it fails again)
+    console.log("Incoming Request Origin:", origin);
+
+    // 2. Allow requests with no origin (like mobile apps, curl, or server-side scripts)
     if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
+
+    // 3. Smart Check: Allow if it contains your domain OR localhost
+    // This covers https://www.finovatools.com, https://finovatools.com, etc.
+    if (origin.includes('finovatools.com') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return callback(null, true);
     }
-    return callback(null, true);
+
+    // 4. Block everything else
+    const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+    return callback(new Error(msg), false);
   },
   methods: ['GET', 'POST'],
   optionsSuccessStatus: 200
-}));
+})); 
 
 app.use(express.json());
 
@@ -115,4 +122,5 @@ app.post('/api/chat', async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Finova Dynamic Server running on port ${PORT}`));
+
 
