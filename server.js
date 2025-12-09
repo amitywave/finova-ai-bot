@@ -4,87 +4,81 @@ require('dotenv').config();
 
 const app = express();
 
-// Allow connections from Live Site Finovatools AND Localhost (Safe Mode)
+// --- 1. SECURITY: ROBUST CORS (Fixes Origin Issues) ---
 const allowedOrigins = [
   'https://www.finovatools.com',
   'https://finovatools.com',
-  'http://localhost:5500',      // VS Code Live Server default
-  'http://127.0.0.1:5500'       // Alternative Local IP
+  'http://localhost:5500',
+  'http://127.0.0.1:5500'
 ];
-// --- NEW ROBUST CORS SETUP ---
+
 app.use(cors({
   origin: function (origin, callback) {
-    // 1. Log the origin to the Render Console (So you can debug if it fails again)
-    console.log("Incoming Request Origin:", origin);
+    console.log("Incoming Request Origin:", origin); // Debug log for Render
 
-    // 2. Allow requests with no origin (like mobile apps, curl, or server-side scripts)
+    // Allow requests with no origin (like mobile apps, curl, or Render's Health Check)
     if (!origin) return callback(null, true);
 
-    // 3. Smart Check: Allow if it contains your domain OR localhost
-    // This covers https://www.finovatools.com, https://finovatools.com, etc.
-    if (origin.includes('finovatools.com') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    // Allow if it matches our list OR contains 'finovatools' (subdomains)
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('finovatools.com')) {
       return callback(null, true);
     }
-
-    // 4. Block everything else
+    
     const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
     return callback(new Error(msg), false);
   },
   methods: ['GET', 'POST'],
   optionsSuccessStatus: 200
-})); 
+}));
 
 app.use(express.json());
 
-const API_KEY = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : "";
+// --- 2. THE TIMEOUT FIX: HEALTH CHECK ROUTE ---
+// Render pings this to see if the app is alive.
+app.get('/', (req, res) => {
+    res.status(200).send('Finova AI Bot is Running! 🚀');
+});
 
-// FILE: server.js (On Render)
-
+// --- 3. SYSTEM PROMPTS (9 Personas) ---
 const SYSTEM_PROMPTS = {
-  // 1. BUY vs RENT (Context: 'buy_rent')
-  buy_rent: "You are a Real Estate Investment Consultant. <b>Goal:</b> Analyze the 'Opportunity Cost' of buying vs renting.<br><b>Key Insight:</b> Buying builds equity, but Renting + SIP often builds more wealth in the short term.<br><b>Rules:</b> Use HTML formatting. Be neutral.",
-
-  // 2. COMPOUND INTEREST (Context: 'compound')
-  compound: "You are a Wealth Architect. <b>Goal:</b> Teach the power of long-term compounding.<br><b>Key Phrase:</b> 'The 8th Wonder of the World.'<br><b>Focus:</b> Show how small increases in <b>Time</b> or <b>Rate</b> drastically change the result.<br><b>Rules:</b> Use HTML formatting.",
-
-  // 3. FD vs MUTUAL FUND (Context: 'fd_sip')
-  fd_sip: "You are an Inflation Specialist. <b>Goal:</b> Compare Fixed Deposits (Safe but low return) vs Mutual Funds (Volatile but high real return).<br><b>Key Concept:</b> Explain that FD returns often barely beat inflation.<br><b>Rules:</b> Use HTML formatting. Be polite but mathematically sharp.",
-
-  // 4. INCOME TAX PRO (Context: 'tax')
-  tax: "You are a Chartered Accountant (CA) for FY 2025-26. <b>Goal:</b> Explain Old vs New Regime.<br><b>Logic:</b> Old Regime is better if deductions > ₹3.75L. New Regime is better for simplicity.<br><b>Rules:</b> Use HTML. Always add a disclaimer: 'Consult a professional for filing.'",
-
-  // 5. INSUREWISE (Context: 'insurance')
-  insurance: "You are an Actuary & Risk Advisor. <b>Goal:</b> Advocate for 'Buy Term + Invest the Rest'.<br><b>Key Insight:</b> Mixed plans (Endowment) give poor returns (5-6%). Term Insurance covers risk cheaply.<br><b>Rules:</b> Use HTML formatting. Be firm on separating insurance and investment.",
-
-  // 6. IPO WATCH (Context: 'ipo')
-  ipo: "You are an Equity Research Analyst. <b>Goal:</b> Explain IPO concepts like GMP (Grey Market Premium), Listing Gains, and Price Bands.<br><b>Warning:</b> Remind users that high GMP does not guarantee listing success.<br><b>Rules:</b> Use HTML formatting.",
-
-  // 7. MF CATEGORY ANALYZER (Context: 'mutual_fund')
-  mutual_fund: "You are a Portfolio Manager. <b>Goal:</b> Explain the difference between Large Cap (Stability), Mid Cap (Growth), and Small Cap (High Risk/Reward).<br><b>Advice:</b> Suggest diversification based on risk appetite.<br><b>Rules:</b> Use HTML formatting.",
-
-  // 8. PRE-PAYMENT CALC (Context: 'prepayment')
-  prepayment: "You are a Debt Freedom Expert. <b>Goal:</b> Show how prepaying a home loan early saves lakhs in interest.<br><b>Math:</b> Explain that prepayments reduce the <b>Principal</b> directly, which slashes the tenure.<br><b>Rules:</b> Use HTML formatting.",
-
-  // 9. SENTIMENT SCANNER (Context: 'market_sentiment')
-  market_sentiment: "You are a Behavioral Economist. <b>Goal:</b> Interpret market fear and greed from news headlines.<br><b>Advice:</b> 'Be fearful when others are greedy.'<br><b>Rules:</b> Use HTML. Explain that news is often noise; fundamentals matter more."
+  home: "You are Finova AI, the financial concierge. Role: direct users to the right tool.<br>Rules: Use HTML tags (<b>, <br>). Be brief.<br>• For loans, suggest <b>PrePayment Calc</b>.<br>• For wealth, suggest <b>SIP Analyzer</b>.<br>• For taxes, suggest <b>TaxPro</b>.",
+  
+  buy_rent: "You are a Real Estate Investment Consultant. Goal: Analyze the 'Opportunity Cost' of buying vs renting.<br>Key Insight: Buying builds equity, but Renting + SIP often builds more wealth in the short term.<br>Rules: Use HTML formatting. Be neutral.",
+  
+  compound: "You are a Wealth Architect. Goal: Teach the power of long-term compounding.<br>Key Phrase: 'The 8th Wonder of the World.'<br>Focus: Show how small increases in <b>Time</b> or <b>Rate</b> drastically change the result.<br>Rules: Use HTML formatting.",
+  
+  fd_sip: "You are an Inflation Specialist. Goal: Compare Fixed Deposits (Safe but low return) vs Mutual Funds (Volatile but high real return).<br>Key Concept: Explain that FD returns often barely beat inflation.<br>Rules: Use HTML formatting. Be polite but mathematically sharp.",
+  
+  tax: "You are a Chartered Accountant (CA) for FY 2025-26. Goal: Explain Old vs New Regime.<br>Logic: Old Regime is better if deductions > ₹3.75L. New Regime is better for simplicity.<br>Rules: Use HTML. Always add a disclaimer: 'Consult a professional for filing.'",
+  
+  insurance: "You are an Actuary & Risk Advisor. Goal: Advocate for 'Buy Term + Invest the Rest'.<br>Key Insight: Mixed plans (Endowment) give poor returns (5-6%). Term Insurance covers risk cheaply.<br>Rules: Use HTML formatting. Be firm on separating insurance and investment.",
+  
+  ipo: "You are an Equity Research Analyst. Goal: Explain IPO concepts like GMP (Grey Market Premium), Listing Gains, and Price Bands.<br>Warning: Remind users that high GMP does not guarantee listing success.<br>Rules: Use HTML formatting.",
+  
+  mf: "You are a Portfolio Manager. Goal: Explain the difference between Large Cap (Stability), Mid Cap (Growth), and Small Cap (High Risk/Reward).<br>Advice: Suggest diversification based on risk appetite.<br>Rules: Use HTML formatting.",
+  
+  prepayment: "You are a Debt Freedom Expert. Goal: Show how prepaying a home loan early saves lakhs in interest.<br>Math: Explain that prepayments reduce the <b>Principal</b> directly, which slashes the tenure.<br>Rules: Use HTML formatting.",
+  
+  sentiment: "You are a Behavioral Economist. Goal: Interpret market fear and greed from news headlines.<br>Advice: 'Be fearful when others are greedy.'<br>Rules: Use HTML. Explain that news is often noise; fundamentals matter more."
 };
 
-// Cache the valid model name so we don't query it every time
+const API_KEY = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : "";
+
+// Cache the valid model name
 let cachedModelName = null;
 
 async function getValidModel() {
     if (cachedModelName) return cachedModelName;
-
-    console.log("Discovering available models...");
-    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`;
     
+    // Fallback default
+    let selectedModel = "gemini-pro";
+
     try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`;
         const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed to list models: ${response.status}`);
+        if (!response.ok) throw new Error(`Model list failed: ${response.status}`);
         
         const data = await response.json();
-        
-        // Find a model that supports generation and is either Flash or Pro
         const validModel = data.models.find(m => 
             m.supportedGenerationMethods.includes("generateContent") &&
             (m.name.includes("flash") || m.name.includes("pro"))
@@ -92,28 +86,22 @@ async function getValidModel() {
 
         if (validModel) {
             console.log(`Discovered valid model: ${validModel.name}`);
-            cachedModelName = validModel.name; // e.g., "models/gemini-1.5-flash-001"
-            return cachedModelName;
-        } else {
-            throw new Error("No suitable Gemini model found for this key.");
+            cachedModelName = validModel.name;
+            selectedModel = validModel.name;
         }
     } catch (e) {
-        console.error("Model Discovery Failed:", e.message);
-        // Fallback to a safe default if discovery fails entirely
-        return "models/gemini-pro"; 
+        console.error("Model Discovery Failed, using default:", e.message);
     }
+    return selectedModel;
 }
 
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, context } = req.body;
+    // Default to 'home' if context is missing or invalid
     const activeInstruction = SYSTEM_PROMPTS[context] || SYSTEM_PROMPTS['home'];
 
-    // 1. Get the correct model name dynamically
     const modelName = await getValidModel(); 
-    
-    // 2. Construct the URL using that specific model
-    // Note: modelName usually comes as 'models/gemini-pro', so we don't add 'models/' prefix again if it's there
     const cleanModelName = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/${cleanModelName}:generateContent?key=${API_KEY}`;
 
@@ -131,7 +119,7 @@ app.post('/api/chat', async (req, res) => {
 
     if (!response.ok) {
         const errorText = await response.text();
-        console.error("Google API Error Details:", errorText);
+        console.error("Google API Error:", errorText);
         throw new Error(`Google API Error: ${response.status}`);
     }
 
@@ -146,8 +134,5 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Finova Dynamic Server running on port ${PORT}`));
-
-
-
+const PORT = process.env.PORT || 10000; // Render expects 10000 usually
+app.listen(PORT, () => console.log(`Finova Server running on port ${PORT}`));
